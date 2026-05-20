@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useVapeStore } from '../../shared/store';
 import { DEVICES } from '../../shared/devices';
 import { IPC } from '../../shared/ipc-channels';
@@ -7,6 +7,7 @@ const DRAG_THRESHOLD_PX = 5;
 const HIT_THRESHOLD_MS = 150;
 const DOUBLE_CLICK_MS = 300;
 const AUTO_RESET_MS = 3000;
+const STATS_DISMISS_MS = 10000;
 
 interface SmokeParticle {
   x: number;
@@ -21,6 +22,20 @@ interface SmokeParticle {
   driftSpeed: number;
   baseAlpha: number;
   swirlOffset: number;
+}
+
+declare global {
+  interface Window {
+    boro: {
+      ipc: {
+        send: (channel: string, ...args: any[]) => void;
+        invoke: (channel: string, ...args: any[]) => Promise<any>;
+        on: (channel: string, listener: (...args: any[]) => void) => (() => void);
+      };
+      channels: typeof IPC;
+      assetsDir: string;
+    };
+  }
 }
 
 export default function SpriteApp() {
@@ -39,6 +54,7 @@ export default function SpriteApp() {
     charge,
     toggleOnOff,
     resetCurrentDevice,
+    nextDevice,
   } = useVapeStore();
 
   useEffect(() => {
@@ -52,62 +68,48 @@ export default function SpriteApp() {
   const leftDownRef = useRef(false);
   const rightDownRef = useRef(false);
   const draggingRef = useRef(false);
-  const hittingRef = useRef(false);
+  const isRightHittingRef = useRef(false);
   const totalMovementRef = useRef(0);
-  const startTimeRef = useRef(0);
-  const hitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leftStartRef = useRef({ x: 0, y: 0, time: 0 });
+  const rightStartRef = useRef({ time: 0 });
+  const rightHitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLeftClickRef = useRef(0);
   const lastRightClickRef = useRef(0);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [spinning, setSpinning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [statsVisible, setStatsVisible] = useState(false);
 
-  const startHitStable = useCallback(startHit, [startHit]);
-  const endHitStable = useCallback(endHit, [endHit]);
-
-  // Canvas smoke system — rebuilt for realistic vape cloud
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<SmokeParticle[]>([]);
   const rafRef = useRef<number>(0);
+  const isHittingRef = useRef(isHitting);
+  useEffect(() => { isHittingRef.current = isHitting; }, [isHitting]);
   const prevHitRef = useRef(false);
+  const lastHitDurationRef = useRef(0);
 
-  const spawnSmoke = useCallback((elapsedMs: number, burst = false) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.width / dpr;
-    const h = canvas.height / dpr;
-    const centerX = w / 2;
-    const emitY = h * 0.34;
+  useEffect(() => {
+    if (!isEmpty) return;
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      resetCurrentDevice();
+    }, AUTO_RESET_MS);
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, [isEmpty, resetCurrentDevice]);
 
-    const count = burst
-      ? Math.min(140, Math.max(40, Math.floor(elapsedMs / 25)))
-      : Math.min(70, Math.max(8, Math.floor(elapsedMs / 45)));
-
-    for (let i = 0; i < count; i++) {
-      const life = 1.8 + Math.random() * 2.2 + (burst ? 0.5 : 0);
-      const startSize = 14 + Math.random() * 18 + (elapsedMs / 100) * 2;
-      const grow = 18 + Math.random() * 28;
-      const alpha = 0.025 + Math.random() * 0.035;
-
-      particlesRef.current.push({
-        x: centerX + (Math.random() - 0.5) * 24,
-        y: emitY + (Math.random() - 0.5) * 10,
-        vx: (Math.random() - 0.5) * 0.6,
-        vy: -0.6 - Math.random() * 1.4,
-        life: life,
-        maxLife: life,
-        size: startSize,
-        grow: grow,
-        driftPhase: Math.random() * Math.PI * 2,
-        driftSpeed: 0.8 + Math.random() * 1.6,
-        baseAlpha: alpha,
-        swirlOffset: Math.random() * Math.PI * 2,
-      });
-    }
-  }, []);
+  const showStats = () => {
+    setStatsVisible(true);
+    if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
+    statsTimerRef.current = setTimeout(() => setStatsVisible(false), STATS_DISMISS_MS);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -127,7 +129,6 @@ export default function SpriteApp() {
       ctx.clearRect(0, 0, rect.width, rect.height);
 
       const parts = particlesRef.current;
-      // Sort by size so larger (haze) draw behind smaller (dense core)
       parts.sort((a, b) => a.size - b.size);
 
       for (let i = parts.length - 1; i >= 0; i--) {
@@ -137,14 +138,11 @@ export default function SpriteApp() {
           parts.splice(i, 1);
           continue;
         }
-        const t = 1 - p.life / p.maxLife; // 0 = birth, 1 = death
+        const t = 1 - p.life / p.maxLife;
 
-        // Buoyancy: upward velocity tapers as it mixes with air
         p.vy *= (1 - 0.1 * dt);
-        // Add slight upward acceleration at first
         if (t < 0.2) p.vy -= 0.2 * dt;
 
-        // Turbulence / swirl
         const swirl = Math.sin(t * Math.PI * 3 + p.swirlOffset) * (0.3 + t * 0.8);
         p.vx += (swirl - p.vx) * 0.5 * dt;
         p.vx += Math.sin(p.driftPhase + now * 0.0015 * p.driftSpeed) * 0.15 * dt;
@@ -153,14 +151,12 @@ export default function SpriteApp() {
         p.y += p.vy * dt * 60;
         p.size += p.grow * dt;
 
-        // Fade curve: hold opacity early, fade faster later
         const fade = (1 - Math.pow(t, 2.5));
         const alpha = p.baseAlpha * fade;
         if (alpha <= 0) continue;
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        // Very soft radial gradient for wispy cloud look
         const r = p.size;
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
         g.addColorStop(0, 'rgba(255,255,255,0.55)');
@@ -174,122 +170,133 @@ export default function SpriteApp() {
         ctx.restore();
       }
 
-      // Continuous emission while hitting
-      if (isHitting && !prevHitRef.current) {
-        // just started
+      if (prevHitRef.current && !isHittingRef.current) {
+        spawnSmoke(lastHitDurationRef.current, true);
+        lastHitDurationRef.current = 0;
       }
-      if (isHitting) {
-        spawnSmoke(16.67, false);
-      } else if (prevHitRef.current && !isHitting) {
-        // release burst
-        spawnSmoke(600, true);
-      }
-      prevHitRef.current = isHitting;
+      prevHitRef.current = isHittingRef.current;
 
       rafRef.current = requestAnimationFrame(animate);
     };
+
+    function spawnSmoke(elapsedMs: number, burst = false) {
+      const img = imgRef.current;
+      if (!img) return;
+      const imgRect = img.getBoundingClientRect();
+      const emitX = imgRect.left + imgRect.width * 0.35;
+      const emitY = imgRect.top - 4;
+
+      const durationFactor = Math.min(elapsedMs / 2000, 1);
+      const count = Math.max(10, Math.floor(30 + durationFactor * 60));
+      const baseLife = 1.2 + durationFactor * 1.5;
+
+      for (let i = 0; i < count; i++) {
+        const life = baseLife + Math.random() * 1.2;
+        const startSize = 10 + Math.random() * 10 + durationFactor * 12;
+        const grow = 12 + Math.random() * 18 + durationFactor * 10;
+        const alpha = 0.02 + Math.random() * 0.03;
+
+        particlesRef.current.push({
+          x: emitX + (Math.random() - 0.5) * 12,
+          y: emitY + (Math.random() - 0.5) * 6,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: -0.8 - Math.random() * 1.2,
+          life: life,
+          maxLife: life,
+          size: startSize,
+          grow: grow,
+          driftPhase: Math.random() * Math.PI * 2,
+          driftSpeed: 0.8 + Math.random() * 1.6,
+          baseAlpha: alpha,
+          swirlOffset: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [dev.width, dev.height, isHitting, spawnSmoke]);
+  }, []);
 
-  useEffect(() => {
-    if (!isEmpty) return;
-    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    resetTimerRef.current = setTimeout(() => {
-      resetCurrentDevice();
-    }, AUTO_RESET_MS);
-    return () => {
-      if (resetTimerRef.current) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
-    };
-  }, [isEmpty, resetCurrentDevice]);
-
-  const handleLeftDown = useCallback(
-    (e: React.MouseEvent | React.TouchEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0) {
       leftDownRef.current = true;
       draggingRef.current = false;
       totalMovementRef.current = 0;
-      startTimeRef.current = Date.now();
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-      const startX = clientX;
-      const startY = clientY;
+      leftStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
 
-      const onMove = (ev: MouseEvent | TouchEvent) => {
-        const cx = 'touches' in ev ? ev.touches[0].clientX : ev.clientX;
-        const cy = 'touches' in ev ? ev.touches[0].clientY : ev.clientY;
-        const dx = cx - startX;
-        const dy = cy - startY;
-        totalMovementRef.current += Math.hypot(dx, dy);
-        if (totalMovementRef.current > DRAG_THRESHOLD_PX) {
+      const onMove = (ev: MouseEvent) => {
+        const dxTotal = ev.clientX - leftStartRef.current.x;
+        const dyTotal = ev.clientY - leftStartRef.current.y;
+        totalMovementRef.current = Math.hypot(dxTotal, dyTotal);
+        if (totalMovementRef.current > DRAG_THRESHOLD_PX && !draggingRef.current) {
           draggingRef.current = true;
+        }
+        if (draggingRef.current) {
+          window.boro.ipc.send(IPC.DRAG_DELTA, { dx: ev.movementX, dy: ev.movementY });
         }
       };
 
-      const onUp = (ev: MouseEvent | TouchEvent) => {
+      const onUp = (ev: MouseEvent) => {
         leftDownRef.current = false;
-        const duration = Date.now() - startTimeRef.current;
-        if (!draggingRef.current && duration < HIT_THRESHOLD_MS && isOn && !isEmpty) {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+
+        const duration = Date.now() - leftStartRef.current.time;
+        if (draggingRef.current) return;
+
+        if (duration < HIT_THRESHOLD_MS) {
           const now = Date.now();
           if (now - lastLeftClickRef.current < DOUBLE_CLICK_MS) {
-            // double click ignored
-          } else {
-            if (!hittingRef.current) {
-              hittingRef.current = true;
-              startHitStable();
-              hitTimerRef.current = setTimeout(() => {
-                if (hittingRef.current) {
-                  hittingRef.current = false;
-                  endHitStable();
-                }
-              }, 600);
-            }
+            setSpinning(true);
+            setTimeout(() => setSpinning(false), 400);
           }
           lastLeftClickRef.current = now;
         }
-        window.removeEventListener('mousemove', onMove as EventListener);
-        window.removeEventListener('mouseup', onUp as EventListener);
-        window.removeEventListener('touchmove', onMove as EventListener);
-        window.removeEventListener('touchend', onUp as EventListener);
       };
 
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
-      window.addEventListener('touchmove', onMove);
-      window.addEventListener('touchend', onUp);
-    },
-    [startHitStable, endHitStable, isOn, isEmpty]
-  );
+    } else if (e.button === 2) {
+      e.preventDefault();
+      rightDownRef.current = true;
+      rightStartRef.current = { time: Date.now() };
+      isRightHittingRef.current = false;
 
-  const handleRightClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setMenuPos({ x: e.clientX, y: e.clientY });
-    setMenuOpen(true);
-  }, []);
+      rightHitTimerRef.current = setTimeout(() => {
+        if (rightDownRef.current) {
+          startHit();
+          isRightHittingRef.current = true;
+        }
+      }, HIT_THRESHOLD_MS);
 
-  const handleContextAction = useCallback(
-    (action: string) => {
-      setMenuOpen(false);
-      if (action === 'next') {
-        window.electron?.ipcRenderer?.send(IPC.SWITCH_DEVICE, { direction: 'next' });
-        setSpinning(true);
-        setTimeout(() => setSpinning(false), 400);
-      } else if (action === 'prev') {
-        window.electron?.ipcRenderer?.send(IPC.SWITCH_DEVICE, { direction: 'prev' });
-        setSpinning(true);
-        setTimeout(() => setSpinning(false), 400);
-      } else if (action === 'toggle') {
-        toggleOnOff();
-      } else if (action === 'charge') {
-        charge();
-      } else if (action === 'reset') {
-        resetCurrentDevice();
-      }
-    },
-    [toggleOnOff, charge, resetCurrentDevice]
-  );
+      const onUp = (ev: MouseEvent) => {
+        if (!rightDownRef.current) return;
+        rightDownRef.current = false;
+        window.removeEventListener('mouseup', onUp);
+
+        if (rightHitTimerRef.current) {
+          clearTimeout(rightHitTimerRef.current);
+          rightHitTimerRef.current = null;
+        }
+
+        if (isRightHittingRef.current) {
+          const duration = Date.now() - rightStartRef.current.time;
+          lastHitDurationRef.current = duration;
+          endHit(duration);
+          isRightHittingRef.current = false;
+        } else {
+          const now = Date.now();
+          if (now - lastRightClickRef.current < DOUBLE_CLICK_MS) {
+            setMenuPos({ x: ev.clientX, y: ev.clientY });
+            setMenuOpen(true);
+          }
+          lastRightClickRef.current = now;
+        }
+      };
+
+      window.addEventListener('mouseup', onUp);
+    }
+  };
 
   useEffect(() => {
     const closeMenu = () => setMenuOpen(false);
@@ -304,14 +311,12 @@ export default function SpriteApp() {
       style={{
         width: '100vw',
         height: '100vh',
-        overflow: 'hidden',
-        background: '#1a1a1a',
+        background: 'transparent',
         position: 'relative',
         userSelect: 'none',
       }}
-      onMouseDown={handleLeftDown}
-      onTouchStart={handleLeftDown}
-      onContextMenu={handleRightClick}
+      onMouseDown={handleMouseDown}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <canvas
         ref={canvasRef}
@@ -332,13 +337,13 @@ export default function SpriteApp() {
         style={{
           position: 'absolute',
           left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) ${spinning ? 'rotate(360deg)' : 'rotate(0deg)'}`,
+          top: 160,
+          transform: `perspective(400px) translateX(-50%) ${spinning ? 'rotateY(360deg)' : 'rotateY(0deg)'}`,
           transition: spinning ? 'transform 0.4s ease' : 'none',
-          maxWidth: '80vw',
-          maxHeight: '60vh',
+          maxHeight: 220,
+          maxWidth: '90vw',
           zIndex: 1,
-          filter: isOn ? 'none' : 'brightness(0.6)',
+          filter: isOn ? (isHitting ? 'drop-shadow(0 0 10px rgba(200,220,255,0.8)) brightness(1.05)' : 'none') : 'brightness(0.6)',
           opacity: isHitting && isOn ? 0.9 : 1,
         }}
       />
@@ -360,57 +365,48 @@ export default function SpriteApp() {
             boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
           }}
         >
-          <div style={menuItemStyle} onClick={() => handleContextAction('next')}>
-            Next Device
-          </div>
-          <div style={menuItemStyle} onClick={() => handleContextAction('prev')}>
-            Prev Device
-          </div>
-          <div style={menuDividerStyle} />
-          <div style={menuItemStyle} onClick={() => handleContextAction('toggle')}>
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); toggleOnOff(); }}>
             {isOn ? 'Turn Off' : 'Turn On'}
           </div>
-          <div style={menuItemStyle} onClick={() => handleContextAction('charge')}>
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); charge(); }}>
             Charge Battery
           </div>
-          <div style={menuItemStyle} onClick={() => handleContextAction('reset')}>
-            Reset Device
+          <div style={isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={() => { if (isEmpty) { setMenuOpen(false); resetCurrentDevice(); } }}>
+            New Device
+          </div>
+          <div style={!isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={() => { if (!isEmpty) { setMenuOpen(false); nextDevice(); } }}>
+            Next Device
+          </div>
+          <div style={menuDividerStyle} />
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); showStats(); }}>
+            Stats
           </div>
         </div>
       )}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 12,
-          left: 12,
-          color: '#888',
-          fontSize: 11,
-          fontFamily: 'monospace',
-          zIndex: 3,
-          lineHeight: 1.5,
-        }}
-      >
-        <div>puffs: {puffsRemaining}</div>
-        <div>battery: {batteryPct}%</div>
-        <div>juice: {eLiquidPct}%</div>
-        <div>total: {totalPuffsLifetime}</div>
-        <div>disposables: {totalDisposablesVaped}</div>
-      </div>
-      {isHitting && isOn && (
+      {statsVisible && (
         <div
           style={{
             position: 'absolute',
-            top: '8%',
+            top: 40,
             left: '50%',
             transform: 'translateX(-50%)',
-            color: 'rgba(255,255,255,0.15)',
+            background: 'rgba(0,0,0,0.7)',
+            borderRadius: 6,
+            padding: '8px 12px',
+            color: '#ddd',
             fontSize: 12,
-            fontFamily: 'system-ui, sans-serif',
+            fontFamily: 'monospace',
+            zIndex: 5,
+            lineHeight: 1.5,
             pointerEvents: 'none',
-            zIndex: 1,
+            whiteSpace: 'nowrap',
           }}
         >
-          ...
+          <div>puffs: {puffsRemaining}</div>
+          <div>battery: {batteryPct}%</div>
+          <div>juice: {Math.round(eLiquidPct)}%</div>
+          <div>total: {totalPuffsLifetime}</div>
+          <div>disposables: {totalDisposablesVaped}</div>
         </div>
       )}
     </div>
@@ -429,9 +425,20 @@ const menuItemStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const menuItemDisabledStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  padding: '6px 12px',
+  background: 'none',
+  border: 'none',
+  color: '#666',
+  fontSize: 13,
+  cursor: 'default',
+};
+
 const menuDividerStyle: React.CSSProperties = {
   height: 1,
   background: '#333',
   margin: '4px 0',
 };
-
