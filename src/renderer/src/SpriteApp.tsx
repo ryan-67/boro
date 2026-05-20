@@ -374,9 +374,7 @@ export default function SpriteApp() {
           <div style={isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={() => { if (isEmpty) { setMenuOpen(false); resetCurrentDevice(); } }}>
             New Device
           </div>
-          <div style={!isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={() => { if (!isEmpty) { setMenuOpen(false); nextDevice(); } }}>
-            Next Device
-          </div>
+
           <div style={menuDividerStyle} />
           <div style={menuItemStyle} onClick={() => { setMenuOpen(false); showStats(); }}>
             Stats
