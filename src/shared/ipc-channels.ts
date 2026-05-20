@@ -1,0 +1,26 @@
+export const IPC = {
+  WINDOW_CREATE: 'window-create',
+  WINDOW_CLOSE: 'window-close',
+  WINDOW_MINIMIZE: 'window-minimize',
+  WINDOW_MAXIMIZE: 'window-maximize',
+  WINDOW_DRAG: 'window-drag',
+  DRAG_DELTA: 'drag-delta',
+  SET_IGNORE_MOUSE_EVENTS: 'set-ignore-mouse-events',
+  GET_DEVICES: 'get-devices',
+  DEVICE_SELECT: 'device-select',
+  STORE_GET: 'store-get',
+  STORE_SET: 'store-set',
+  SPAWN_PET: 'spawn-pet',
+  KILL_PET: 'kill-pet',
+  DB_LOG_PUFF: 'db-log-puff',
+  DB_INCREMENT_DISPOSABLE: 'db-increment-disposable',
+  DB_GET_COUNTER: 'db-get-counter',
+  DB_GET_SESSION_TOTALS: 'db-get-session-totals',
+  DB_SET_APP_STATE: 'db-set-app-state',
+  DB_GET_APP_STATE: 'db-get-app-state',
+  UPDATE_SESSION_DEVICE: 'update-session-device',
+  OPEN_PROFILE_WINDOW: 'open-profile-window',
+  GET_PROFILE_DATA: 'get-profile-data',
+} as const;
+
+export type IpcChannel = (typeof IPC)[keyof typeof IPC];

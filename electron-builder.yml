@@ -1,0 +1,49 @@
+appId: app.boro
+productName: boro
+copyright: Copyright © 2026
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - "!**/*.map"
+
+extraResources:
+  - from: assets/
+    to: assets/
+    filter:
+      - "**/*.png"
+
+# macOS — universal DMG (Intel + Apple Silicon)
+mac:
+  category: public.app-category.productivity
+  darkModeSupport: true
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+
+dmg:
+  title: boro
+  window:
+    width: 540
+    height: 380
+
+# Windows — NSIS installer
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+
+# Publish config (left blank for MVP — fill in for auto-updater)
+publish: []

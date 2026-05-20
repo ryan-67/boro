@@ -1,0 +1,437 @@
+boro - PROJECT SCOPE & ARCHITECTURE DOCUMENT
+======================================================
+Document Version: 3.0 (Simplified Virtual Disposable Vape)
+Date: May 18, 2026
+Prepared for: Claude Code Execution
+
+Desktop Pet App Name: boro
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+boro is a desktop pet virtual disposable vape device for Windows. The app sits as a
+small, always-on-top, frameless transparent window on the user's desktop. Users select
+a real-world disposable vape model (e.g., Geek Bar, Foger Bar, Flum), click and hold
+to take virtual "puffs," and watch the device deplete e-liquid and battery exactly
+like its real-world counterpart. When the device runs out, it auto-resets with the
+same flavor/model for continuous virtual vaping.
+
+The app targets people who vape IRL and want a harmless desktop substitute to help
+taper or quit. There is no focus timer, no pomodoro, and no productivity layer.
+It is purely a virtual fidget/replacement tool.
+
+
+2. CORE CONCEPT & USER FLOW
+---------------------------
+First Launch:
+  1. Onboarding: pick a disposable vape brand/model (Geek Bar, Foger Bar, Flum, etc.)
+  2. Pick flavor if applicable (optional, purely cosmetic)
+  3. Small transparent window appears on desktop with chosen device
+  4. Device shows current puffs remaining, battery %, and e-liquid %
+
+Regular Use:
+  - Click + hold on the device to "take a hit"
+    - Hold phase: quiet vape inhale sound loops, device LED glows, slight shake
+    - Release: exhale sound, vapor cloud burst (size proportional to hold duration),
+      puffs counter decreases by estimated amount, battery and liquid deplete accordingly
+  - Right-click -> "Charge" to recharge battery to 100% (with optional charging dock
+    desktop pet animation as a separate window)
+  - Right-click -> "Stats" to open stats window
+  - Right-click -> "Switch Device" to change to another disposable model
+  - Device can be dragged to reposition anywhere on screen
+
+Depletion & Reset:
+  - When puffs remaining hits 0 OR battery hits 0%, the device goes into "empty" state
+    (LED off, no puffs possible)
+  - Auto-resets with same brand/model/flavor after a brief animation (3-5s)
+  - Increment global "Disposables Vaped" counter by 1
+
+
+3. TECH STACK
+-------------
+Desktop App:
+  - Framework: Electron (Windows primary; macOS secondary if needed later)
+  - Language: TypeScript
+  - UI Renderer: HTML5 Canvas for device animation + React for menus/settings
+  - Window Management: frameless, transparent, always-on-top, ~180x280px default size
+  - State Management: Zustand
+  - Local DB: SQLite (better-sqlite3) for stats, device history, puff logs
+  - Audio: Web Audio API for looping inhale sounds and one-shot exhale/vapor sounds
+  - Packaging: electron-builder (NSIS for Windows)
+  - No native modules required for MVP
+
+
+4. DEVICE SIMULATION MODEL
+--------------------------
+Each disposable vape is modeled on real-world specifications.
+
+Required per-device spec fields:
+  - brand (string): "Geek Bar", "Foger Bar", "Flum", "Elf Bar", "Raz" etc.
+  - model (string): "Pulse", "Meloso", etc.
+  - max_puffs (int): total puffs advertised by manufacturer (e.g., 15000, 30000)
+  - battery_mah (int): battery capacity (e.g., 650)
+  - charge_time_min (int): time to charge from 0% to 100% (e.g., 45)
+  - e_liquid_ml (float): total e-liquid capacity (e.g., 16.0)
+  - puff_depletes_ml (float): estimated ml per puff = e_liquid_ml / max_puffs
+  - battery_drain_per_puff_pct (float): estimated battery % used per puff.
+    For simplicity: assume linear drain to 0% battery when puffs hit 0,
+    so battery_drain_per_puff_pct = 100 / max_puffs.
+  - flavor (string, optional): purely cosmetic label (e.g., "Blue Razz Ice")
+
+Runtime State per Active Device:
+  - puffs_remaining (int)
+  - battery_pct (float, 0-100)
+  - e_liquid_pct (float, 0-100)
+
+Puff Calculation:
+  - On click-hold, start timer
+  - On release: duration_seconds = hold_time
+  - estimated_puffs_consumed = round(duration_seconds / avg_puff_duration_sec)
+    where avg_puff_duration_sec defaults to 2.5s (tunable per device if data exists)
+  - Clamp to remaining puffs (cannot go below 0)
+  - puffs_remaining -= estimated_puffs_consumed
+  - battery_pct -= estimated_puffs_consumed * battery_drain_per_puff_pct
+  - e_liquid_pct = (puffs_remaining / max_puffs) * 100  (synced 1:1 with puffs)
+
+Charge:
+  - Right-click -> Charge sets battery_pct = 100 instantly
+  - OR: if charging dock pet is implemented, a separate desktop window shows a tiny
+    dock with a USB-C cable that animates plugging into the vape for charge_time_min
+    duration, then battery_pct = 100.
+
+Empty State:
+  - When puffs_remaining <= 0 or battery_pct <= 0:
+    - LED goes dark
+    - Click-hold does nothing (no sound, no cloud)
+    - Display small "Empty" badge briefly
+    - After 3s auto-reset: puffs_remaining = max_puffs, battery_pct = 100
+    - Increment total_disposables_vaped counter, log to SQLite
+    - Play subtle "new device unwrap" sound (very quiet)
+
+
+5. DESKTOP PET WINDOW ARCHITECTURE
+----------------------------------
+Primary Pet Window:
+  - size: 180x280px (adjustable per device skin)
+  - frame: false
+  - transparent: true
+  - backgroundColor: '#00000000'
+  - alwaysOnTop: true
+  - hasShadow: false
+  - skipTaskbar: true
+  - resizable: false
+  - movable: true (user can drag with mouse; drag vs click-hold detection needed)
+  - contextIsolation: true with preload script for IPC
+
+Charging Dock Pet Window (Optional Phase 2):
+  - separate small window, ~100x80px
+  - sits near the vape or in a fixed corner
+  - shows USB-C port animation when charging
+  - auto-dismisses when charge complete
+
+Canvas Layers (primary window):
+  1. Drop shadow beneath device
+  2. Device base sprite (device-specific PNG)
+  3. E-liquid level overlay (semi-transparent colored fill matching flavor tint)
+  4. LED glow overlay (glows brighter while holding hit)
+  5. Vapor cloud particle system (on release only)
+  6. UI overlay (tiny remaining puffs + battery icon)
+
+Click-Hold vs Drag Detection:
+  - MouseDown starts a short timer (e.g., 150ms)
+  - If mouse moves past 5px before timer expires -> drag mode
+  - If timer expires with little movement -> hit mode, start inhale sound loop
+  - MouseUp in hit mode -> release vapor cloud, stop sound
+  - Maximum hold cap: 30 seconds (to prevent infinite loop / accidental drain)
+
+
+6. ANIMATION & ART SYSTEM
+-------------------------
+Visual Style:
+  - Semi-realistic vector-like renderings of popular disposable vapes
+  - Dark-mode friendly, premium but casual
+  - Vapor should look like real vape clouds (thick, white, billowing, dissipating)
+
+Device Sprites (Asset Checklist):
+  [ ] geekbar_pulse_15000.png (or generic Geek Bar chassis)
+  [ ] foger_bar_tank.png
+  [ ] flum_pebble.png
+  [ ] elf_bar_bc5000.png
+  [ ] raz_tn9000.png
+  [ ] Generic USB-C charging dock sprite
+  [ ] Vapor cloud sprites (3-5 variants for rotation/variety)
+  [ ] LED glow overlay (radial gradient, adjustable opacity)
+  [ ] E-liquid fill overlay (mask shape matched to device tank window)
+  [ ] Desktop shadow beneath device
+
+Vapor Particle System:
+  - Triggers ONLY on mouse release after a click-hold hit
+  - Particle count proportional to hold duration (min 5, max 50)
+  - Thick white/gray clouds, billow outward and upward, fade over 1-2s
+  - Object pooling for performance (max 60 particles)
+
+E-Liquid Overlay:
+  - Semi-transparent colored fill inside device's visible tank window
+  - Color lightly tinted by flavor (e.g., blue for Blue Razz, amber for Tobacco,
+    pink for Watermelon)
+  - Level = puffs_remaining / max_puffs, linear mapping
+
+LED:
+  - Small LED on device sprite that glows softly in idle state
+  - Brightens during click-hold hit
+  - Turns off when device empty
+  - Blinks slowly when battery < 10%
+
+Shake Effect:
+  - During click-hold, device sprite shakes subtly (random X/Y jitter, 1-2px)
+  - Intensity scales slightly with hold duration
+
+
+7. SUPPORTED DEVICES (INITIAL LIST)
+-----------------------------------
+Data to source from official manufacturer or reputable vape review sites for:
+  - Geek Bar Pulse / Pulse X (15000 / 25000 puffs)
+  - Geek Bar Meloso (various puff counts)
+  - Foger Bar (disposable tank-style, typical 10000-15000 puffs)
+  - Flum Pebble / Float (6000-10000 puffs)
+  - Elf Bar BC5000 / TE6000 (5000-6000 puffs)
+  - Raz TN9000 / DC25000 (9000-25000 puffs)
+  - Lost Mary OS5000 (5000 puffs)
+  - DigiFlavor Geek Bar (Lunar, Lush series)
+
+For each device we need:
+  - max_puffs, battery_mah, charge_time_min, e_liquid_ml, dimensions (for sprite scaling)
+  - Sprite: a simplified chassis PNG (not exact product photo, stylized to avoid legal issues)
+
+
+8. AUDIO DESIGN
+---------------
+Inhale (Loop while held):
+  - Quiet, continuous soft "whoosh" + subtle coil sizzle
+  - Volume: low (default 30%)
+  - Should loop seamlessly via Web Audio API with crossfade
+
+Exhale / Vapor Release (On mouse release):
+  - Soft "puff" or air burst sound
+  - Duration: 0.5-1s
+  - Slightly louder than inhale
+
+New Device Reset (On auto-restart after empty):
+  - Very quiet plastic "unwrap" or "click" sound
+  - Non-intrusive, optional toggle in settings
+
+UI Sounds:
+  - Charge start: soft electronic chime
+  - Charge complete: soft ding
+  - Right-click menu open: minimal click
+  - Settings toggle: subtle tap
+
+
+9. STATS & TRACKING
+-------------------
+SQLite Schema:
+
+  sessions (each continuous run of the app):
+    id INTEGER PRIMARY KEY,
+    started_at TEXT,
+    ended_at TEXT,
+    device_brand TEXT,
+    device_model TEXT,
+    total_puffs INTEGER,
+    total_disposables_vaped INTEGER
+
+  puff_events (individual hit logs):
+    id INTEGER PRIMARY KEY,
+    session_id INTEGER,
+    timestamp TEXT,
+    hold_duration_sec REAL,
+    estimated_puffs_consumed INTEGER,
+    battery_pct_before REAL,
+    battery_pct_after REAL,
+    puffs_remaining_before INTEGER,
+    puffs_remaining_after INTEGER
+
+  global_counters:
+    key TEXT PRIMARY KEY,
+    value INTEGER
+    -- keys: total_disposables_vaped, total_puffs_lifetime, current_streak_days
+
+Stats Window UI:
+  - Total virtual disposables vaped (big number)
+  - Total lifetime puffs
+  - Today's puffs / today's disposables vaped
+  - Weekly puff chart (bar chart)
+  - Current device stats (puffs remaining, battery %, e-liquid %, brand, model)
+  - Device history (last 10 devices vaped virtually)
+
+No external cloud. All data stays local.
+
+
+10. FEATURES & FUNCTIONALITY
+----------------------------
+Core Vape Interaction:
+  - Click-hold to hit (with drag detection so window stays moveable)
+  - Puff consumption proportional to hold duration
+  - Battery and e-liquid depletion based on real device specs
+  - Auto-reset when empty (same brand/model/flavor)
+  - Quiet, realistic inhale/exhale sounds
+
+Charging:
+  - Right-click -> "Charge" (instant recharge to full)
+  - (Optional Phase 2) Charging dock pet with USB-C animation and real charge delay
+
+Device Selection:
+  - Pre-loaded list of ~8 popular disposable devices with real specs
+  - Flavor selection (cosmetic only, no effect on depletion)
+  - Ability to add custom device with manual specs (Phase 2)
+
+Stats & Tracking:
+  - SQLite local storage
+  - "Disposables Vaped" counter (main quit-metric)
+  - Lifetime puff count
+  - Daily summaries
+  - Device history
+
+Settings (right-click -> Settings):
+  - Selected device / flavor
+  - Sound volume (inhale, exhale, UI)
+  - Master mute toggle
+  - Vapor density toggle (low / medium / high)
+  - Auto-start on Windows boot
+  - Window position lock/unlock
+  - Reset all stats / reset current device
+
+System Integration:
+  - Windows system tray icon (right-click menu)
+  - Global mute shortcut (optional)
+  - Native notifications (optional, e.g., "Device empty - starting new")
+
+
+11. MONETIZATION
+----------------
+FREE TIER:
+  - 3-4 base devices (e.g., Geek Bar Pulse, Elf Bar BC5000, Flum Pebble)
+  - All core functionality
+  - Basic stats (today only)
+  - No ads, no telemetry
+
+PRO TIER ($4.99 lifetime or $0.99/mo):
+  - All 10+ devices unlocked
+  - Full stats history, charts, export
+  - Custom device creator (enter your own specs)
+  - Charging dock pet skin variety
+  - Additional vapor effects and sounds
+  - Priority flavor library
+
+Why lifetime pricing:
+  - This is a utility/fidget app. Subscriptions feel wrong for something this simple.
+  - One-time $4.99 feels like buying a virtual pack. Easy decision.
+
+License validation:
+  - Simple signed key stored in SQLite. No server required.
+
+
+12. BUILD PHASES & MILESTONES
+-------------------------------
+PHASE 1: MVP (2-2.5 weeks)
+  - Electron boilerplate, transparent window, draggable
+  - Canvas render loop with device sprite
+  - Click-hold detection + drag differentiation
+  - Puff math (hold duration -> puffs consumed -> battery+liquid deplete)
+  - Auto-reset on empty with disposables counter increment
+  - Basic right-click menu (Charge, Stats, Settings, Quit)
+  - 3 base device specs (hardcoded JSON)
+  - Basic vapor particle system
+  - Inhale/exhale placeholder sounds (free SFX)
+  - SQLite schema + global counter persistence
+  - Windows NSIS build
+
+PHASE 2: Polish + Device Library (1.5 weeks)
+  - Full 8+ device spec database with real data
+  - E-liquid overlay animation per device
+  - LED glow + low-battery blink
+  - Shake effect during hit
+  - Stats window with charts
+  - Settings window
+  - Flavor selection UI
+  - Pro tier paywall + license key logic
+  - Proper sound design (or purchase SFX pack)
+
+PHASE 3: Website + Ship (1 week)
+  - Single-page landing site (Vercel or GitHub Pages)
+  - Download with platform detection
+  - Age gate (18+ / 21+ depending on region)
+  - Clear messaging about quit tool / harm reduction
+  - Reddit / vape cessation community outreach
+
+
+13. CRITICAL NON-FUNCTIONAL REQUIREMENTS
+----------------------------------------
+  - CPU < 3% at idle, < 10% during active hit + particles
+  - Memory < 150MB
+  - Window must not steal focus on startup
+  - Handle sleep/wake gracefully (pause on sleep, resume state on wake)
+  - Multi-monitor + DPI aware
+  - No admin elevation required for installer
+  - All device art must be stylized illustrations, not photos, to avoid trademark issues
+
+
+14. OPEN QUESTIONS FOR BUILDER
+--------------------------------
+  1. Should charging dock be Phase 1 or Phase 2?
+  2. Do we need a "taper mode" (daily puff cap / lockout after N puffs) as a quit feature?
+  3. How should we source device specs? scrape manufacturer sites, or manually enter from review data?
+  4. Should empty auto-reset be instant (3s animation) or require a click to "unwrap" the new device?
+  5. Do we include nicotine-free / 0mg devices in the list as a psychological nudge?
+
+END OF DOCUMENT
+
+
+15. DESIGN DECISIONS ADDED MAY 18, 2026 (BUILD KICKOFF)
+-------------------------------------------------------
+Right-click Context Menu (Primary Device Window):
+  - "Charge": instantly refills battery_pct to 100 (no delay, no dock).
+  - "On/Off": toggles device active state. When OFF, click-hold does nothing,
+    LED dims to off, no auto-reset until turned back ON.
+  - "New Device": ALWAYS visible in menu, but grayed out / disabled until the
+    current device is fully depleted (puffs_remaining <= 0 OR battery_pct <= 0).
+    Once empty, the device auto-resets anyway, so "New Device" is mainly a
+    manual override for users who want to force a fresh unit before the auto-reset triggers.
+
+Deferred to Phase 2:
+  - Charging dock pet window with USB-C animation and real charge_time_min duration.
+  - Taper mode / daily puff cap / lockout (quit-assistance feature).
+  - Custom device creator (Pro tier).
+
+END
+
+
+16. CLICK-HOLD HIT MECHANIC & LED GLOW (PHASE 1 STEP 2)
+----------------------------------------------------------
+Renderer must detect click-hold on the device sprite:
+  - On pointerdown start a 150ms timer.
+  - If mouse moves > 5px before timer expires: drag mode.
+    In drag mode, renderer sends an IPC to main so mainWindow.setPosition()
+    follows the mouse (custom window drag, since -webkit-app-region:drag is removed).
+  - If timer expires with <= 5px movement: enter hit mode.
+    In hit mode, render an LED glow overlay around the device sprite
+    (white radial gradient, opacity 0.6, scaling slightly larger than sprite).
+    Glow persists while pointer remains down.
+
+On pointerup:
+  - Drag mode: stop moving window.
+  - Hit mode: remove glow overlay, log hold_duration_ms, proceed to puff math.
+    For this step, puff math can be a stub (console.log the duration).
+
+Visuals:
+  - Replace the <span class="label">boro</span> with an <img> pointing to
+    geek_pulse_x.png from the assets/ folder.
+  - The glow overlay is a separate absolutely-positioned div layered behind
+    or around the image, toggled via CSS opacity/scale transition or class toggle.
+  - Window must remain transparent, frameless, always-on-top.
+
+Notes:
+  - Remove -webkit-app-region: drag from html/body since we handle drag manually.
+  - Only one device sprite exists currently: geek_pulse_x.png.
+  - No need for a full device registry yet; just hardcode this single device image.
+

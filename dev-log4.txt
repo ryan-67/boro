@@ -1,0 +1,41 @@
+
+> boro@0.1.0 dev
+> electron-vite dev
+
+[36mvite v5.4.21 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 3 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.js  [39m[1m[2m6.99 kB[22m[1m[22m
+[32m✓ built in 76ms[39m
+[32m
+build the electron main process successfully[39m
+[90m
+-----
+[39m
+[36mvite v5.4.21 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 2 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m1.34 kB[22m[1m[22m
+[32m✓ built in 9ms[39m
+[32m
+build the electron preload files successfully[39m
+[90m
+-----
+[39m
+Port 5173 is in use, trying another one...
+Port 5174 is in use, trying another one...
+Port 5175 is in use, trying another one...
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5176[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+start electron app...
+[39m
+
+Window shown at [ 2240, 852 ]
+[2m4:04:10 PM[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mD:/Projects/boro/src/shared/store.ts[22m
+[12432:0519/161546.893:ERROR:network_service_instance_impl.cc(600)] Network service crashed, restarting service.
+[12432:0519/161546.894:ERROR:gpu_process_host.cc(1002)] GPU process exited unexpectedly: exit_code=1
