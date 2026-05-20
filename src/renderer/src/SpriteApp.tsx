@@ -52,6 +52,7 @@ export default function SpriteApp() {
     startHit,
     endHit,
     charge,
+    refill,
     toggleOnOff,
     resetCurrentDevice,
     nextDevice,
@@ -183,17 +184,17 @@ export default function SpriteApp() {
       const img = imgRef.current;
       if (!img) return;
       const imgRect = img.getBoundingClientRect();
-      const emitX = imgRect.left + imgRect.width * 0.35;
-      const emitY = imgRect.top - 4;
+      const emitX = imgRect.left + imgRect.width * 0.25;
+      const emitY = imgRect.top - 12;
 
       const durationFactor = Math.min(elapsedMs / 2000, 1);
-      const count = Math.max(10, Math.floor(30 + durationFactor * 60));
-      const baseLife = 1.2 + durationFactor * 1.5;
+      const count = Math.max(6, Math.floor(12 + durationFactor * 100));
+      const baseLife = 1.0 + durationFactor * 2.5;
 
       for (let i = 0; i < count; i++) {
         const life = baseLife + Math.random() * 1.2;
-        const startSize = 10 + Math.random() * 10 + durationFactor * 12;
-        const grow = 12 + Math.random() * 18 + durationFactor * 10;
+        const startSize = 6 + Math.random() * 10 + durationFactor * 28;
+        const grow = 10 + Math.random() * 16 + durationFactor * 24;
         const alpha = 0.02 + Math.random() * 0.03;
 
         particlesRef.current.push({
@@ -337,13 +338,13 @@ export default function SpriteApp() {
         style={{
           position: 'absolute',
           left: '50%',
-          top: 160,
+          top: 140,
           transform: `perspective(400px) translateX(-50%) ${spinning ? 'rotateY(360deg)' : 'rotateY(0deg)'}`,
           transition: spinning ? 'transform 0.4s ease' : 'none',
-          maxHeight: 220,
+          maxHeight: 150,
           maxWidth: '90vw',
           zIndex: 1,
-          filter: isOn ? (isHitting ? 'drop-shadow(0 0 10px rgba(200,220,255,0.8)) brightness(1.05)' : 'none') : 'brightness(0.6)',
+          filter: isOn ? (isHitting ? 'drop-shadow(0 0 1px rgba(220,240,255,1)) drop-shadow(0 0 3px rgba(200,230,255,0.8)) drop-shadow(0 0 8px rgba(180,215,255,0.5)) brightness(1.1)' : 'none') : 'brightness(0.6)',
           opacity: isHitting && isOn ? 0.9 : 1,
         }}
       />
@@ -371,13 +372,23 @@ export default function SpriteApp() {
           <div style={menuItemStyle} onClick={() => { setMenuOpen(false); charge(); }}>
             Charge Battery
           </div>
-          <div style={isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={() => { if (isEmpty) { setMenuOpen(false); resetCurrentDevice(); } }}>
-            New Device
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); refill(); }}>
+            Refill
+          </div>
+          <div style={isEmpty ? menuItemStyle : menuItemDisabledStyle} onClick={isEmpty ? () => { setMenuOpen(false); nextDevice(); } : undefined}>
+            Next Device
           </div>
 
           <div style={menuDividerStyle} />
           <div style={menuItemStyle} onClick={() => { setMenuOpen(false); showStats(); }}>
             Stats
+          </div>
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); window.boro.ipc.send(IPC.OPEN_PROFILE_WINDOW); }}>
+            Open Profile
+          </div>
+          <div style={menuDividerStyle} />
+          <div style={menuItemStyle} onClick={() => { setMenuOpen(false); window.boro.ipc.send(IPC.QUIT_APP); }}>
+            Quit
           </div>
         </div>
       )}
@@ -433,6 +444,7 @@ const menuItemDisabledStyle: React.CSSProperties = {
   color: '#666',
   fontSize: 13,
   cursor: 'default',
+  pointerEvents: 'none',
 };
 
 const menuDividerStyle: React.CSSProperties = {
