@@ -172,9 +172,8 @@ export default function SpriteApp() {
       }
 
       if (prevHitRef.current && !isHittingRef.current) {
-        const duration = lastHitDurationRef.current;
+        spawnSmoke(lastHitDurationRef.current, true);
         lastHitDurationRef.current = 0;
-        setTimeout(() => spawnSmoke(duration, true), 120);
       }
       prevHitRef.current = isHittingRef.current;
 
@@ -185,24 +184,24 @@ export default function SpriteApp() {
       const img = imgRef.current;
       if (!img) return;
       const imgRect = img.getBoundingClientRect();
-      const emitX = imgRect.left + imgRect.width * 0.12;
-      const emitY = imgRect.top - 16;
+      const emitX = imgRect.left + imgRect.width * 0.25;
+      const emitY = imgRect.top - 12;
 
       const durationFactor = Math.min(elapsedMs / 2000, 1);
-      const count = Math.max(4, Math.floor(6 + durationFactor * 18));
-      const baseLife = 0.5 + durationFactor * 1.0;
+      const count = Math.max(6, Math.floor(12 + durationFactor * 100));
+      const baseLife = 1.0 + durationFactor * 2.5;
 
       for (let i = 0; i < count; i++) {
-        const life = baseLife + Math.random() * 0.6;
-        const startSize = 3 + Math.random() * 5 + durationFactor * 10;
-        const grow = 2 + Math.random() * 4 + durationFactor * 8;
-        const alpha = 0.04 + Math.random() * 0.04;
+        const life = baseLife + Math.random() * 1.2;
+        const startSize = 6 + Math.random() * 10 + durationFactor * 28;
+        const grow = 10 + Math.random() * 16 + durationFactor * 24;
+        const alpha = 0.02 + Math.random() * 0.03;
 
         particlesRef.current.push({
-          x: emitX + (Math.random() - 0.5) * 10,
-          y: emitY + (Math.random() - 0.5) * 5,
-          vx: (Math.random() - 0.5) * 0.25,
-          vy: -0.4 - Math.random() * 0.6,
+          x: emitX + (Math.random() - 0.5) * 12,
+          y: emitY + (Math.random() - 0.5) * 6,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: -0.8 - Math.random() * 1.2,
           life: life,
           maxLife: life,
           size: startSize,
@@ -339,15 +338,14 @@ export default function SpriteApp() {
         style={{
           position: 'absolute',
           left: '50%',
-          top: 100,
+          top: 140,
           transform: `perspective(400px) translateX(-50%) ${spinning ? 'rotateY(360deg)' : 'rotateY(0deg)'}`,
           transition: spinning ? 'transform 0.4s ease' : 'none',
-          maxHeight: 105,
+          maxHeight: 150,
           maxWidth: '90vw',
           zIndex: 1,
-          filter: isOn ? (isHitting ? 'drop-shadow(0 0 1px rgba(220,240,255,1)) drop-shadow(0 0 4px rgba(200,230,255,0.9)) drop-shadow(0 0 10px rgba(180,215,255,0.6)) brightness(1.15)' : 'brightness(0.95)') : 'brightness(0.6)',
-          transition: 'filter 0.15s ease-out',
-          opacity: isHitting && isOn ? 0.92 : 1,
+          filter: isOn ? (isHitting ? 'drop-shadow(0 0 1px rgba(220,240,255,1)) drop-shadow(0 0 3px rgba(200,230,255,0.8)) drop-shadow(0 0 8px rgba(180,215,255,0.5)) brightness(1.1)' : 'none') : 'brightness(0.6)',
+          opacity: isHitting && isOn ? 0.9 : 1,
         }}
       />
       {menuOpen && (
@@ -443,11 +441,10 @@ const menuItemDisabledStyle: React.CSSProperties = {
   padding: '6px 12px',
   background: 'none',
   border: 'none',
-  color: '#555',
+  color: '#666',
   fontSize: 13,
-  cursor: 'not-allowed',
+  cursor: 'default',
   pointerEvents: 'none',
-  opacity: 0.4,
 };
 
 const menuDividerStyle: React.CSSProperties = {
