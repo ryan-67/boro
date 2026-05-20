@@ -412,7 +412,7 @@ export default function SpriteApp() {
           }}
         >
           <div>puffs: {puffsRemaining}</div>
-          <div>battery: {batteryPct}%</div>
+          <div>battery: {Math.round(batteryPct)}%</div>
           <div>juice: {Math.round(eLiquidPct)}%</div>
           <div>total: {totalPuffsLifetime}</div>
           <div>disposables: {totalDisposablesVaped}</div>
