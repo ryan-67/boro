@@ -33,10 +33,10 @@ function getBottomRightPosition(): { x: number; y: number } {
 function createSelectWindow(): void {
   const primary = screen.getPrimaryDisplay().workAreaSize;
   selectWindow = new BrowserWindow({
-    width: 520,
-    height: 420,
-    x: Math.round((primary.width - 520) / 2),
-    y: Math.round((primary.height - 420) / 2),
+    width: 640,
+    height: 520,
+    x: Math.round((primary.width - 640) / 2),
+    y: Math.round((primary.height - 520) / 2),
     frame: true,
     resizable: false,
     movable: true,

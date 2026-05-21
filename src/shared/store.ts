@@ -33,7 +33,6 @@ const AVG_PUFF_DURATION_SEC = 2.5;
 
 function saveState(state: Partial<VapeState>) {
   const payload = JSON.stringify({
-    activeDeviceIndex: state.activeDeviceIndex,
     puffsRemaining: state.puffsRemaining,
     batteryPct: state.batteryPct,
     eLiquidPct: state.eLiquidPct,
@@ -69,7 +68,7 @@ export const useVapeStore = create<VapeState>((set, get) => ({
       const saved = (await window.boro.ipc.invoke(IPC.DB_GET_APP_STATE, 'device_state')) as string | null;
       if (saved) {
         const parsed = JSON.parse(saved);
-        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, activeDeviceIndex: activeIndex, ...parsed });
+        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, ...parsed, activeDeviceIndex: activeIndex });
       } else {
         set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, activeDeviceIndex: activeIndex });
       }
@@ -95,6 +94,7 @@ export const useVapeStore = create<VapeState>((set, get) => ({
     };
     set(next);
     saveState(next);
+    window.boro.ipc.invoke(IPC.DB_SET_APP_STATE, 'selected_device_id', dev.id).catch(() => {});
     window.boro.ipc.invoke(IPC.UPDATE_SESSION_DEVICE, dev.brand, dev.model).catch(() => {});
   },
 
@@ -180,6 +180,7 @@ export const useVapeStore = create<VapeState>((set, get) => ({
     };
     set(next);
     saveState(next);
+    window.boro.ipc.invoke(IPC.DB_SET_APP_STATE, 'selected_device_id', dev.id).catch(() => {});
     window.boro.ipc.invoke(IPC.UPDATE_SESSION_DEVICE, dev.brand, dev.model).catch(() => {});
   },
 
