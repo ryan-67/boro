@@ -6,3 +6,8 @@ dist/
 Thumbs.db
 build_out.log 
 build_err.log
+release/ 
+_patch*.js 
+dev*.log 
+assets/*.mp4 
+assets/*.gif 

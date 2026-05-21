@@ -184,11 +184,11 @@ export default function SpriteApp() {
       const img = imgRef.current;
       if (!img) return;
       const imgRect = img.getBoundingClientRect();
-      const emitX = imgRect.left + imgRect.width * 0.25;
-      const emitY = imgRect.top - 12;
+      const emitX = imgRect.left + imgRect.width * 0.20;
+      const emitY = imgRect.top - 20;
 
       const durationFactor = Math.min(elapsedMs / 2000, 1);
-      const count = Math.max(6, Math.floor(12 + durationFactor * 100));
+      const count = Math.max(4, Math.floor(6 + durationFactor * 18));
       const baseLife = 1.0 + durationFactor * 2.5;
 
       for (let i = 0; i < count; i++) {
@@ -341,10 +341,10 @@ export default function SpriteApp() {
           top: 140,
           transform: `perspective(400px) translateX(-50%) ${spinning ? 'rotateY(360deg)' : 'rotateY(0deg)'}`,
           transition: spinning ? 'transform 0.4s ease' : 'none',
-          maxHeight: 150,
+          maxHeight: 105,
           maxWidth: '90vw',
           zIndex: 1,
-          filter: isOn ? (isHitting ? 'drop-shadow(0 0 1px rgba(220,240,255,1)) drop-shadow(0 0 3px rgba(200,230,255,0.8)) drop-shadow(0 0 8px rgba(180,215,255,0.5)) brightness(1.1)' : 'none') : 'brightness(0.6)',
+          filter: isOn ? (isHitting ? 'drop-shadow(0 0 1px rgba(255,255,255,0.95)) drop-shadow(0 0 3px rgba(200,230,255,0.9)) drop-shadow(0 0 6px rgba(160,210,255,0.65)) brightness(1.12)' : 'none') : 'brightness(0.6)',
           opacity: isHitting && isOn ? 0.9 : 1,
         }}
       />
