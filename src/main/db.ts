@@ -1,6 +1,8 @@
 import { app } from 'electron';
 import { join } from 'path';
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const Database = require('better-sqlite3');
 
 interface Session {
   id: number;

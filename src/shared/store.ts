@@ -21,6 +21,7 @@ interface VapeState {
   startHit: () => void;
   endHit: (durationMs: number) => void;
   charge: () => void;
+  refill: () => void;
   toggleOnOff: () => void;
   nextDevice: () => void;
   resetDevice: () => void;
@@ -58,14 +59,22 @@ export const useVapeStore = create<VapeState>((set, get) => ({
   init: async () => {
     try {
       const disposables = ((await window.boro.ipc.invoke(IPC.DB_GET_COUNTER, 'total_disposables_vaped')) as number) || 0;
+      const selectedId = ((await window.boro.ipc.invoke(IPC.DB_GET_APP_STATE, 'selected_device_id')) as string | null) || null;
+      let activeIndex = 0;
+      if (selectedId) {
+        const idx = DEVICES.findIndex(d => d.id === selectedId);
+        if (idx >= 0) activeIndex = idx;
+      }
       const puffs = ((await window.boro.ipc.invoke(IPC.DB_GET_COUNTER, 'total_puffs_lifetime')) as number) || 0;
       const saved = (await window.boro.ipc.invoke(IPC.DB_GET_APP_STATE, 'device_state')) as string | null;
       if (saved) {
         const parsed = JSON.parse(saved);
-        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, ...parsed });
+        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, activeDeviceIndex: activeIndex, ...parsed });
       } else {
-        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs });
+        set({ totalDisposablesVaped: disposables, totalPuffsLifetime: puffs, activeDeviceIndex: activeIndex });
       }
+      const dev = DEVICES[get().activeDeviceIndex];
+      window.boro.ipc.invoke(IPC.UPDATE_SESSION_DEVICE, dev.brand, dev.model).catch(() => {});
     } catch (e) {
       console.warn('[store] init failed', e);
     }
@@ -86,6 +95,7 @@ export const useVapeStore = create<VapeState>((set, get) => ({
     };
     set(next);
     saveState(next);
+    window.boro.ipc.invoke(IPC.UPDATE_SESSION_DEVICE, dev.brand, dev.model).catch(() => {});
   },
 
   startHit: () => {
@@ -140,6 +150,14 @@ export const useVapeStore = create<VapeState>((set, get) => ({
     saveState({ ...state, ...next });
   },
 
+  refill: () => {
+    const state = get();
+    const dev = DEVICES[state.activeDeviceIndex];
+    const next = { puffsRemaining: dev.maxPuffs, eLiquidPct: 100, isEmpty: false };
+    set(next);
+    saveState({ ...state, ...next });
+  },
+
   toggleOnOff: () => {
     const state = get();
     const next = { isOn: !state.isOn, isHitting: false, hitStartTime: 0 };
@@ -162,6 +180,7 @@ export const useVapeStore = create<VapeState>((set, get) => ({
     };
     set(next);
     saveState(next);
+    window.boro.ipc.invoke(IPC.UPDATE_SESSION_DEVICE, dev.brand, dev.model).catch(() => {});
   },
 
   resetDevice: () => {

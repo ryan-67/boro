@@ -1,17 +1,28 @@
-﻿import { resolve } from 'path'
+import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
+const nativeExternals = ['better-sqlite3', 'bindings', 'file-uri-to-path']
+
+function nativeExternalsPlugin() {
+  return {
+    name: 'native-externals',
+    enforce: 'pre',
+    resolveId(source) {
+      if (nativeExternals.includes(source) || nativeExternals.some(ext => source.startsWith(ext + '/'))) {
+        return { id: source, external: true }
+      }
+    }
+  }
+}
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [nativeExternalsPlugin(), externalizeDepsPlugin()],
     build: {
-      rollupOptions: {
-        external: ['better-sqlite3', 'bindings', 'file-uri-to-path']
+      commonjsOptions: {
+        ignoreDynamicRequires: true
       }
-    },
-    ssr: {
-      external: ['better-sqlite3', 'bindings', 'file-uri-to-path']
     },
     resolve: {
       alias: {

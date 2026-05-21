@@ -21,6 +21,8 @@ export const IPC = {
   UPDATE_SESSION_DEVICE: 'update-session-device',
   OPEN_PROFILE_WINDOW: 'open-profile-window',
   GET_PROFILE_DATA: 'get-profile-data',
+  QUIT_APP: 'quit-app',
+  SELECT_DEVICE_DONE: 'select-device-done',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

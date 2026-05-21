@@ -14,9 +14,12 @@ declare global {
 
 import SpriteApp from './SpriteApp';
 import ProfileApp from './ProfileApp';
+import SelectDeviceApp from './SelectDeviceApp';
 
 const isProfile = new URLSearchParams(window.location.search).get('window') === 'profile';
+const isSelect = new URLSearchParams(window.location.search).get('window') === 'select';
 
 export default function App() {
+  if (isSelect) return <SelectDeviceApp />;
   return isProfile ? <ProfileApp /> : <SpriteApp />;
 }

@@ -19,6 +19,7 @@ const WINDOW_MARGIN = 20;
 
 let mainWindow: BrowserWindow | null = null;
 let profileWindow: BrowserWindow | null = null;
+let selectWindow: BrowserWindow | null = null;
 
 function getBottomRightPosition(): { x: number; y: number } {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
@@ -28,6 +29,40 @@ function getBottomRightPosition(): { x: number; y: number } {
   };
 }
 
+
+function createSelectWindow(): void {
+  const primary = screen.getPrimaryDisplay().workAreaSize;
+  selectWindow = new BrowserWindow({
+    width: 520,
+    height: 420,
+    x: Math.round((primary.width - 520) / 2),
+    y: Math.round((primary.height - 420) / 2),
+    frame: true,
+    resizable: false,
+    movable: true,
+    title: 'choose your companion',
+    backgroundColor: '#121212',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+    },
+  });
+  selectWindow.once('ready-to-show', () => {
+    selectWindow?.show();
+  });
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    selectWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?window=select`);
+  } else {
+    selectWindow.loadFile(join(__dirname, '../renderer/index.html'), { search: 'window=select' });
+  }
+  selectWindow.on('closed', () => {
+    selectWindow = null;
+  });
+}
 function createWindow(): void {
   const { x, y } = getBottomRightPosition();
   mainWindow = new BrowserWindow({
@@ -103,12 +138,19 @@ function createProfileWindow(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initDB();
-  createWindow();
+  const selected = getAppState('selected_device_id');
+  if (!selected) {
+    createSelectWindow();
+  } else {
+    createWindow();
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      const sel = getAppState('selected_device_id');
+      if (!sel) createSelectWindow();
+      else createWindow();
     }
   });
 });
@@ -165,4 +207,16 @@ ipcMain.handle(IPC.DB_GET_APP_STATE, (_event, key: string) => {
 
 ipcMain.handle(IPC.GET_PROFILE_DATA, () => {
   return getAllData();
+});
+
+ipcMain.on(IPC.QUIT_APP, () => {
+  app.quit();
+});
+
+ipcMain.on(IPC.SELECT_DEVICE_DONE, () => {
+  if (selectWindow && !selectWindow.isDestroyed()) {
+    selectWindow.close();
+    selectWindow = null;
+  }
+  createWindow();
 });
